@@ -9,6 +9,12 @@
 <br>
 </div>
 
+## Aim of the fork
+
+- Phlips SpeechMike Integration - robust, multiplatform (Linux, MacOS and Windows), using HID API (without need of Philips SpeechControl).
+- Client Mode - ulitmately as third lightweight, non-GPU, non-CPU, "remote whisper inference mode"
+- Text curation using LLM (?) 
+
 ## Features
 
 - Voice recording with real-time waveform visualization
