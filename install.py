@@ -22,6 +22,7 @@ libs = [
     "pyside6", # required by my program
     "sounddevice", # required by my program
     "sympy==1.13.3", # set to known torch compatibility
+    "hidapi", # required for Philips SpeechMike direct HID access
 ]
 
 
