@@ -32,9 +32,6 @@
 
 Uses the [faster-whisper](https://github.com/SYSTRAN/faster-whisper) library, which provides CTranslate2-based inference for OpenAI's Whisper models.  Supports both transcription and translation tasks depending on the model selected.
 
-## ⚙️ Windows Installer
-> Download and run [```FasterWhisperTranscriber_Setup.exe```](https://github.com/BBC-Esq/Faster-Whisper-Transcriber/releases/latest/download/FasterWhisperTranscriber_Setup.exe).
-
 ## 💻 Install And Run from Virtual Environment
 > Download the latest release...unzip and extract...go to the directory containing ```main.py```...run these commands in order:
 ```
