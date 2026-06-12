@@ -152,6 +152,7 @@ def _create_clipboard_icon():
 
 class MainWindow(QMainWindow):
     hotkey_toggle_recording = Signal()
+    hotkey_toggle_append_mode = Signal()
 
     DEFAULTS = {
         "model": "base.en",
@@ -228,7 +229,13 @@ class MainWindow(QMainWindow):
         self._restore_state()
 
         self.hotkey_toggle_recording.connect(self._toggle_recording, Qt.QueuedConnection)
-        self.global_hotkey = GlobalHotkey(lambda: self.hotkey_toggle_recording.emit())
+        self.hotkey_toggle_append_mode.connect(
+            self._toggle_append_mode, Qt.QueuedConnection
+        )
+        self.global_hotkey = GlobalHotkey(
+            lambda: self.hotkey_toggle_recording.emit(),
+            lambda: self.hotkey_toggle_append_mode.emit(),
+        )
         self.global_hotkey.start()
 
         self._sample_timer = QTimer(self)
@@ -884,6 +891,13 @@ class MainWindow(QMainWindow):
     @Slot(bool)
     def _on_append_mode_changed(self, checked: bool) -> None:
         self._save_config("clipboard_append_mode", checked)
+
+    @Slot()
+    def _toggle_append_mode(self) -> None:
+        self.clipboard_window.set_append_mode(
+            not self.clipboard_window.is_append_mode()
+        )
+        self._on_append_mode_changed(self.clipboard_window.is_append_mode())
 
     @Slot(str, str)
     def _show_error_dialog(self, title: str, message: str) -> None:

@@ -20,6 +20,7 @@ except Exception:
 VENDOR_ID = 0x0911
 BUTTON_PRESS_EVENT = 0x80
 RECORD_BUTTON_MASK = 1 << 8
+INS_OVR_BUTTON_MASK = 1 << 14
 
 
 class SpeechMikeHID:
@@ -129,8 +130,9 @@ class SpeechMikeHID:
 
 
 class GlobalHotkey:
-    def __init__(self, on_toggle):
+    def __init__(self, on_toggle, on_append_toggle=None):
         self.on_toggle = on_toggle
+        self.on_append_toggle = on_append_toggle
 
         self.listener = None
 
@@ -152,7 +154,7 @@ class GlobalHotkey:
 
             logger.info(
                 "Global hotkey listener started "
-                "(F9 + SpeechMike Record)"
+                "(F9 + SpeechMike Record + SpeechMike Ins/Ovr)"
             )
 
         except Exception as e:
@@ -193,12 +195,22 @@ class GlobalHotkey:
 
             record_was_pressed = bool(last_mask & RECORD_BUTTON_MASK)
             record_is_pressed = bool(mask & RECORD_BUTTON_MASK)
+            ins_ovr_was_pressed = bool(last_mask & INS_OVR_BUTTON_MASK)
+            ins_ovr_is_pressed = bool(mask & INS_OVR_BUTTON_MASK)
 
             last_mask = mask
 
             if record_is_pressed and not record_was_pressed:
                 logger.info("SpeechMike RECORD pressed")
                 self.on_toggle()
+
+            if (
+                ins_ovr_is_pressed
+                and not ins_ovr_was_pressed
+                and self.on_append_toggle is not None
+            ):
+                logger.info("SpeechMike INS/OVR pressed")
+                self.on_append_toggle()
 
             time.sleep(0.005)
 
