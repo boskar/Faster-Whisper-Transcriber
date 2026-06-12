@@ -19,13 +19,19 @@ except Exception:
 
 VENDOR_ID = 0x0911
 BUTTON_PRESS_EVENT = 0x80
+SET_LED_COMMAND = 0x02
 RECORD_BUTTON_MASK = 1 << 8
 INS_OVR_BUTTON_MASK = 1 << 14
+LED_MODE_OFF = 0
+LED_MODE_BLINK_FAST = 2
+LED_MODE_ON = 3
 
 
 class SpeechMikeHID:
     def __init__(self):
         self.device = None
+        self._lock = threading.Lock()
+        self._led_data = [0] * 8
 
     def open(self) -> bool:
         if not HID_AVAILABLE:
@@ -100,7 +106,8 @@ class SpeechMikeHID:
             return None
 
         try:
-            return self.device.read(64)
+            with self._lock:
+                return self.device.read(64)
 
         except OSError:
             return None
@@ -109,10 +116,53 @@ class SpeechMikeHID:
             logger.debug(f"HID read error: {e}")
             return None
 
+    def _write_led_state(self) -> bool:
+        if not self.device:
+            return False
+        report = [0x00, SET_LED_COMMAND, *self._led_data]
+
+        try:
+            with self._lock:
+                self.device.write(report)
+            return True
+        except Exception as e:
+            logger.warning(f"Failed to set SpeechMike LED: {e}")
+            return False
+
+    def set_append_led(self, enabled: bool) -> bool:
+        # Clear INS/OVR green+red bits first.
+        self._led_data[6] &= 0x0F
+
+        if enabled:
+            self._led_data[6] |= LED_MODE_ON << 4
+        else:
+            self._led_data[6] |= LED_MODE_ON << 6
+
+        success = self._write_led_state()
+        if success:
+            logger.info(
+                "SpeechMike INS/OVR LED set to %s",
+                "green" if enabled else "red",
+            )
+        return success
+
+    def set_record_led_mode(self, mode: int) -> bool:
+        # Clear RECORD green+red bits first.
+        self._led_data[5] &= 0xF0
+        self._led_data[5] |= mode << 2
+
+        success = self._write_led_state()
+        if success:
+            logger.info("SpeechMike RECORD LED mode set to %s", mode)
+        return success
+
     def close(self):
         if self.device:
             try:
-                self.device.close()
+                self._led_data = [0] * 8
+                self._write_led_state()
+                with self._lock:
+                    self.device.close()
             except Exception:
                 pass
 
@@ -186,9 +236,11 @@ class GlobalHotkey:
             mask = self.hid.get_button_mask(data)
 
             if mask is None:
+                time.sleep(0.002)
                 continue
 
             if mask == last_mask:
+                time.sleep(0.002)
                 continue
 
             logger.info(f"SpeechMike button mask: 0x{mask:04x}")
@@ -217,38 +269,54 @@ class GlobalHotkey:
     def stop(self) -> None:
         self.running = False
 
+        if self.hid_thread:
+            self.hid.close()
+            self.hid_thread.join(timeout=1.0)
+            self.hid_thread = None
+
         if self.listener is not None:
             import time as _time
+
+            listener = self.listener
+            self.listener = None
 
             try:
                 _t = _time.perf_counter()
 
-                self.listener.stop()
+                stopper = threading.Thread(
+                    target=listener.stop,
+                    daemon=True,
+                )
+                stopper.start()
+                stopper.join(0.5)
 
                 logger.info(
                     f"[SHUTDOWN] listener.stop(): "
                     f"{_time.perf_counter() - _t:.3f}s"
                 )
 
-                _t = _time.perf_counter()
+                if stopper.is_alive():
+                    logger.warning(
+                        "Hotkey listener stop is still pending; skipping join"
+                    )
+                else:
+                    _t = _time.perf_counter()
 
-                self.listener.join(timeout=2.0)
+                    listener.join(2.0)
 
-                logger.info(
-                    f"[SHUTDOWN] listener.join(): "
-                    f"{_time.perf_counter() - _t:.3f}s "
-                    f"(alive={self.listener.is_alive()})"
-                )
+                    logger.info(
+                        f"[SHUTDOWN] listener.join(): "
+                        f"{_time.perf_counter() - _t:.3f}s "
+                        f"(alive={listener.is_alive()})"
+                    )
 
             except Exception as e:
                 logger.warning(
                     f"Error stopping hotkey listener: {e}"
                 )
 
-            finally:
-                self.listener = None
+    def set_append_led(self, enabled: bool) -> bool:
+        return self.hid.set_append_led(enabled)
 
-        if self.hid_thread:
-            self.hid_thread.join(timeout=1.0)
-
-        self.hid.close()
+    def set_record_led_mode(self, mode: int) -> bool:
+        return self.hid.set_record_led_mode(mode)

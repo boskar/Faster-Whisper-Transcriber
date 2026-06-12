@@ -28,7 +28,12 @@ from core.quantization import CheckQuantizationSupport
 from core.controller import TranscriberController
 from core.models.metadata import ModelMetadata
 from core.audio.device_utils import find_device_id_by_name
-from core.hotkeys import GlobalHotkey
+from core.hotkeys import (
+    GlobalHotkey,
+    LED_MODE_BLINK_FAST,
+    LED_MODE_OFF,
+    LED_MODE_ON,
+)
 from core.output.writers import write_output
 from core.monitoring.collectors import MetricsCollector
 from core.server.server_manager import ServerManager
@@ -237,6 +242,8 @@ class MainWindow(QMainWindow):
             lambda: self.hotkey_toggle_append_mode.emit(),
         )
         self.global_hotkey.start()
+        self._sync_append_led()
+        self._sync_record_led_idle()
 
         self._sample_timer = QTimer(self)
         self._sample_timer.setInterval(50)
@@ -876,6 +883,7 @@ class MainWindow(QMainWindow):
             self.record_button.set_state(WaveformButton.TRANSCRIBING)
             self.cancel_button.setVisible(True)
             self.cancel_button.setEnabled(True)
+            self._sync_record_led_transcribing()
 
     @Slot()
     def _on_clipboard_closed(self) -> None:
@@ -891,6 +899,7 @@ class MainWindow(QMainWindow):
     @Slot(bool)
     def _on_append_mode_changed(self, checked: bool) -> None:
         self._save_config("clipboard_append_mode", checked)
+        self._sync_append_led()
 
     @Slot()
     def _toggle_append_mode(self) -> None:
@@ -898,6 +907,20 @@ class MainWindow(QMainWindow):
             not self.clipboard_window.is_append_mode()
         )
         self._on_append_mode_changed(self.clipboard_window.is_append_mode())
+
+    def _sync_append_led(self) -> None:
+        self.global_hotkey.set_append_led(
+            self.clipboard_window.is_append_mode()
+        )
+
+    def _sync_record_led_idle(self) -> None:
+        self.global_hotkey.set_record_led_mode(LED_MODE_OFF)
+
+    def _sync_record_led_recording(self) -> None:
+        self.global_hotkey.set_record_led_mode(LED_MODE_ON)
+
+    def _sync_record_led_transcribing(self) -> None:
+        self.global_hotkey.set_record_led_mode(LED_MODE_BLINK_FAST)
 
     @Slot(str, str)
     def _show_error_dialog(self, title: str, message: str) -> None:
@@ -1027,6 +1050,7 @@ class MainWindow(QMainWindow):
             self.is_recording = False
             self.record_button.setText("Processing...")
             update_button_property(self.record_button, "recording", False)
+            self._sync_record_led_transcribing()
         else:
             if self.controller.start_recording():
                 self.is_recording = True
@@ -1034,6 +1058,7 @@ class MainWindow(QMainWindow):
                 self.record_button.set_state(WaveformButton.RECORDING)
                 self._sample_timer.start()
                 update_button_property(self.record_button, "recording", True)
+                self._sync_record_led_recording()
 
     @Slot()
     def _feed_audio_samples(self) -> None:
@@ -1052,6 +1077,7 @@ class MainWindow(QMainWindow):
         self.record_button.set_state(WaveformButton.IDLE)
         self.cancel_button.setEnabled(True)
         self.cancel_button.setVisible(False)
+        self._sync_record_led_idle()
 
     def _is_supported_audio_file(self, path: str) -> bool:
         try:
@@ -1081,6 +1107,7 @@ class MainWindow(QMainWindow):
             f"mode={output_mode}, fmt={output_format})"
         )
         self.record_button.setText("Transcribing...")
+        self._sync_record_led_transcribing()
         self.controller.transcribe_file(file_path, batch_size=batch_size)
 
     @Slot(object)
@@ -1135,6 +1162,7 @@ class MainWindow(QMainWindow):
         self.record_button.setText("Transcribing...")
         self.record_button.set_state(WaveformButton.TRANSCRIBING)
         self.record_button.setEnabled(False)
+        self._sync_record_led_transcribing()
         self.controller.start_batch_processing(
             files=files,
             output_format=fmt,
@@ -1150,12 +1178,14 @@ class MainWindow(QMainWindow):
         self.record_button.setText("Click to Record")
         self.record_button.set_state(WaveformButton.IDLE)
         self.record_button.setEnabled(True)
+        self._sync_record_led_idle()
 
     @Slot(str)
     def _on_batch_finished(self, message: str) -> None:
         self.record_button.setText("Click to Record")
         self.record_button.set_state(WaveformButton.IDLE)
         self.record_button.setEnabled(True)
+        self._sync_record_led_idle()
 
     # --- Drag and drop ---
 
@@ -1225,6 +1255,7 @@ class MainWindow(QMainWindow):
     @Slot(str)
     def _on_transcription_ready(self, text: str) -> None:
         self.record_button.set_state(WaveformButton.IDLE)
+        self._sync_record_led_idle()
 
         output_mode = getattr(self, "_pending_output_mode", "clipboard")
 
@@ -1260,9 +1291,11 @@ class MainWindow(QMainWindow):
             self.controller.stop_recording()
             self.is_recording = False
             update_button_property(self.record_button, "recording", False)
+            self._sync_record_led_idle()
 
         if enabled and self.record_button.get_state() != WaveformButton.IDLE:
             self.record_button.set_state(WaveformButton.IDLE)
+            self._sync_record_led_idle()
 
     def _extract_first_supported_drop(self, event) -> str | None:
         if not (md := event.mimeData()) or not md.hasUrls():

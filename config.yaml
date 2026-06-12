@@ -7,8 +7,8 @@ supported_quantizations:
   cpu:
   - float32
   cuda:
-  - float16
   - float32
+  - float16
   - bfloat16
 curate_transcription: true
 clipboard_append_mode: false
