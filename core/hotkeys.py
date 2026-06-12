@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 import threading
 import time
 
@@ -22,6 +23,7 @@ BUTTON_PRESS_EVENT = 0x80
 SET_LED_COMMAND = 0x02
 RECORD_BUTTON_MASK = 1 << 8
 INS_OVR_BUTTON_MASK = 1 << 14
+F1_BUTTON_MASK = 1 << 1
 LED_MODE_OFF = 0
 LED_MODE_BLINK_FAST = 2
 LED_MODE_ON = 3
@@ -156,6 +158,21 @@ class SpeechMikeHID:
             logger.info("SpeechMike RECORD LED mode set to %s", mode)
         return success
 
+    def set_f1_led(self, enabled: bool) -> bool:
+        # Clear F1 LED bits first.
+        self._led_data[7] &= 0x3F
+
+        if enabled:
+            self._led_data[7] |= LED_MODE_ON << 6
+
+        success = self._write_led_state()
+        if success:
+            logger.info(
+                "SpeechMike F1 LED set to %s",
+                "on" if enabled else "off",
+            )
+        return success
+
     def close(self):
         if self.device:
             try:
@@ -180,15 +197,22 @@ class SpeechMikeHID:
 
 
 class GlobalHotkey:
-    def __init__(self, on_toggle, on_append_toggle=None):
+    def __init__(
+        self,
+        on_toggle,
+        on_append_toggle=None,
+        on_paste_mode_toggle=None,
+    ):
         self.on_toggle = on_toggle
         self.on_append_toggle = on_append_toggle
+        self.on_paste_mode_toggle = on_paste_mode_toggle
 
         self.listener = None
 
         self.hid = SpeechMikeHID()
         self.hid_thread = None
         self.running = False
+        self.keyboard_controller = keyboard.Controller()
 
     def start(self) -> bool:
         try:
@@ -204,7 +228,7 @@ class GlobalHotkey:
 
             logger.info(
                 "Global hotkey listener started "
-                "(F9 + SpeechMike Record + SpeechMike Ins/Ovr)"
+                "(F9 + SpeechMike Record + SpeechMike Ins/Ovr + SpeechMike F1)"
             )
 
         except Exception as e:
@@ -249,6 +273,8 @@ class GlobalHotkey:
             record_is_pressed = bool(mask & RECORD_BUTTON_MASK)
             ins_ovr_was_pressed = bool(last_mask & INS_OVR_BUTTON_MASK)
             ins_ovr_is_pressed = bool(mask & INS_OVR_BUTTON_MASK)
+            f1_was_pressed = bool(last_mask & F1_BUTTON_MASK)
+            f1_is_pressed = bool(mask & F1_BUTTON_MASK)
 
             last_mask = mask
 
@@ -263,6 +289,14 @@ class GlobalHotkey:
             ):
                 logger.info("SpeechMike INS/OVR pressed")
                 self.on_append_toggle()
+
+            if (
+                f1_is_pressed
+                and not f1_was_pressed
+                and self.on_paste_mode_toggle is not None
+            ):
+                logger.info("SpeechMike F1 pressed")
+                self.on_paste_mode_toggle()
 
             time.sleep(0.005)
 
@@ -320,3 +354,20 @@ class GlobalHotkey:
 
     def set_record_led_mode(self, mode: int) -> bool:
         return self.hid.set_record_led_mode(mode)
+
+    def set_f1_led(self, enabled: bool) -> bool:
+        return self.hid.set_f1_led(enabled)
+
+    def paste_active_window(self) -> None:
+        try:
+            modifier = keyboard.Key.cmd if sys.platform == "darwin" else keyboard.Key.ctrl
+            self.keyboard_controller.press(modifier)
+            self.keyboard_controller.press("v")
+            self.keyboard_controller.release("v")
+            self.keyboard_controller.release(modifier)
+            logger.info(
+                "Triggered %s+V paste into active window",
+                "Command" if sys.platform == "darwin" else "Ctrl",
+            )
+        except Exception as e:
+            logger.warning(f"Failed to send paste hotkey: {e}")

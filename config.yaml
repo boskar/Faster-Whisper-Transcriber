@@ -2,7 +2,7 @@ model_name: large-v3
 quantization_type: float32
 device_type: cuda
 task_mode: transcribe
-show_clipboard_window: true
+show_clipboard_window: false
 supported_quantizations:
   cpu:
   - float32

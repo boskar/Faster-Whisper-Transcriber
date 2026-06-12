@@ -14,12 +14,14 @@ class ClipboardSideWindow(QWidget):
     docked_changed = Signal(bool)
     always_on_top_changed = Signal(bool)
     append_mode_changed = Signal(bool)
+    paste_mode_changed = Signal(bool)
 
     def __init__(self, parent: QWidget | None = None, width: int = 400):
         super().__init__(parent)
 
         self._always_on_top = True
         self._append_mode = False
+        self._paste_mode = False
         self._docked = True
         self._internal_move = False
         self._internal_move_count = 0
@@ -67,6 +69,12 @@ class ClipboardSideWindow(QWidget):
         self._append_checkbox.setChecked(False)
         self._append_checkbox.toggled.connect(self._on_append_toggled)
         controls.addWidget(self._append_checkbox)
+
+        self._paste_checkbox = QCheckBox("Paste mode")
+        self._paste_checkbox.setToolTip("Paste the clipboard into the active window after transcription")
+        self._paste_checkbox.setChecked(False)
+        self._paste_checkbox.toggled.connect(self._on_paste_toggled)
+        controls.addWidget(self._paste_checkbox)
 
         self._on_top_checkbox = QCheckBox("Always on Top")
         self._on_top_checkbox.setToolTip("Keep this window above other windows")
@@ -135,6 +143,20 @@ class ClipboardSideWindow(QWidget):
 
     def is_append_mode(self) -> bool:
         return self._append_mode
+
+    @Slot(bool)
+    def _on_paste_toggled(self, checked: bool) -> None:
+        self._paste_mode = checked
+        self.paste_mode_changed.emit(checked)
+
+    def set_paste_mode(self, enabled: bool) -> None:
+        self._paste_mode = enabled
+        self._paste_checkbox.blockSignals(True)
+        self._paste_checkbox.setChecked(enabled)
+        self._paste_checkbox.blockSignals(False)
+
+    def is_paste_mode(self) -> bool:
+        return self._paste_mode
 
     def add_transcription(self, text: str) -> None:
         if self._append_mode:

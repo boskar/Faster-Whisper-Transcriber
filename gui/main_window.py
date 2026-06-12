@@ -59,6 +59,7 @@ SETTINGS_CLIPBOARD_DOCKED = "clipboard/docked"
 SETTINGS_CLIPBOARD_VISIBLE = "clipboard/visible"
 SETTINGS_CLIPBOARD_ALWAYS_ON_TOP = "clipboard/always_on_top"
 SETTINGS_APPEND_MODE = "clipboard/append_mode"
+SETTINGS_PASTE_MODE = "clipboard/paste_mode"
 SETTINGS_MODEL = "model/name"
 SETTINGS_DEVICE = "model/device"
 SETTINGS_QUANTIZATION = "model/quantization"
@@ -158,6 +159,7 @@ def _create_clipboard_icon():
 class MainWindow(QMainWindow):
     hotkey_toggle_recording = Signal()
     hotkey_toggle_append_mode = Signal()
+    hotkey_toggle_paste_mode = Signal()
 
     DEFAULTS = {
         "model": "base.en",
@@ -165,6 +167,7 @@ class MainWindow(QMainWindow):
         "quantization": "float32",
         "task_mode": "transcribe",
         "append_mode": False,
+        "paste_mode": False,
         "clipboard_visible": False,
         "clipboard_always_on_top": True,
         "clipboard_docked": True,
@@ -237,12 +240,17 @@ class MainWindow(QMainWindow):
         self.hotkey_toggle_append_mode.connect(
             self._toggle_append_mode, Qt.QueuedConnection
         )
+        self.hotkey_toggle_paste_mode.connect(
+            self._toggle_paste_mode, Qt.QueuedConnection
+        )
         self.global_hotkey = GlobalHotkey(
             lambda: self.hotkey_toggle_recording.emit(),
             lambda: self.hotkey_toggle_append_mode.emit(),
+            lambda: self.hotkey_toggle_paste_mode.emit(),
         )
         self.global_hotkey.start()
         self._sync_append_led()
+        self._sync_paste_mode_led()
         self._sync_record_led_idle()
 
         self._sample_timer = QTimer(self)
@@ -364,6 +372,10 @@ class MainWindow(QMainWindow):
             SETTINGS_APPEND_MODE, self.DEFAULTS["append_mode"], type=bool
         )
         self.clipboard_window.set_append_mode(append_mode)
+        paste_mode = self.settings.value(
+            SETTINGS_PASTE_MODE, self.DEFAULTS["paste_mode"], type=bool
+        )
+        self.clipboard_window.set_paste_mode(paste_mode)
 
         always_on_top = self.settings.value(
             SETTINGS_CLIPBOARD_ALWAYS_ON_TOP,
@@ -470,6 +482,9 @@ class MainWindow(QMainWindow):
         self.settings.setValue(
             SETTINGS_APPEND_MODE, self.clipboard_window.is_append_mode()
         )
+        self.settings.setValue(
+            SETTINGS_PASTE_MODE, self.clipboard_window.is_paste_mode()
+        )
         self.settings.setValue(SETTINGS_CLIPBOARD_VISIBLE, self._clipboard_visible)
         self.settings.setValue(
             SETTINGS_CLIPBOARD_ALWAYS_ON_TOP,
@@ -547,6 +562,9 @@ class MainWindow(QMainWindow):
     def _setup_connections(self) -> None:
         self.clipboard_window.append_mode_changed.connect(
             self._on_append_mode_changed
+        )
+        self.clipboard_window.paste_mode_changed.connect(
+            self._on_paste_mode_changed
         )
 
         self.controller.update_button_signal.connect(self._on_button_text_update)
@@ -901,6 +919,11 @@ class MainWindow(QMainWindow):
         self._save_config("clipboard_append_mode", checked)
         self._sync_append_led()
 
+    @Slot(bool)
+    def _on_paste_mode_changed(self, checked: bool) -> None:
+        self.settings.setValue(SETTINGS_PASTE_MODE, checked)
+        self._sync_paste_mode_led()
+
     @Slot()
     def _toggle_append_mode(self) -> None:
         self.clipboard_window.set_append_mode(
@@ -908,9 +931,21 @@ class MainWindow(QMainWindow):
         )
         self._on_append_mode_changed(self.clipboard_window.is_append_mode())
 
+    @Slot()
+    def _toggle_paste_mode(self) -> None:
+        self.clipboard_window.set_paste_mode(
+            not self.clipboard_window.is_paste_mode()
+        )
+        self._on_paste_mode_changed(self.clipboard_window.is_paste_mode())
+
     def _sync_append_led(self) -> None:
         self.global_hotkey.set_append_led(
             self.clipboard_window.is_append_mode()
+        )
+
+    def _sync_paste_mode_led(self) -> None:
+        self.global_hotkey.set_f1_led(
+            self.clipboard_window.is_paste_mode()
         )
 
     def _sync_record_led_idle(self) -> None:
@@ -1269,6 +1304,8 @@ class MainWindow(QMainWindow):
                     else text
                 )
                 app.clipboard().setText(clip_text)
+                if self.clipboard_window.is_paste_mode():
+                    QTimer.singleShot(75, self.global_hotkey.paste_active_window)
 
         if self.is_recording:
             self.is_recording = False
