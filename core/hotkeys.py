@@ -18,6 +18,8 @@ except Exception:
 
 
 VENDOR_ID = 0x0911
+BUTTON_PRESS_EVENT = 0x80
+RECORD_BUTTON_MASK = 1 << 8
 
 
 class SpeechMikeHID:
@@ -115,6 +117,16 @@ class SpeechMikeHID:
 
             self.device = None
 
+    @staticmethod
+    def get_button_mask(data) -> int | None:
+        if len(data) < 9:
+            return None
+
+        if data[0] != BUTTON_PRESS_EVENT:
+            return None
+
+        return data[7] | (data[8] << 8)
+
 
 class GlobalHotkey:
     def __init__(self, on_toggle):
@@ -159,7 +171,7 @@ class GlobalHotkey:
         return True
 
     def _hid_loop(self):
-        last = None
+        last_mask = 0
 
         while self.running:
 
@@ -169,20 +181,22 @@ class GlobalHotkey:
                 time.sleep(0.01)
                 continue
 
-            code = data[-1]
+            mask = self.hid.get_button_mask(data)
 
-            if code == last:
+            if mask is None:
                 continue
 
-            last = code
-
-            if code == 0:
+            if mask == last_mask:
                 continue
 
-            logger.info(f"SpeechMike button: {code}")
+            logger.info(f"SpeechMike button mask: 0x{mask:04x}")
 
-            # RECORD
-            if code == 1:
+            record_was_pressed = bool(last_mask & RECORD_BUTTON_MASK)
+            record_is_pressed = bool(mask & RECORD_BUTTON_MASK)
+
+            last_mask = mask
+
+            if record_is_pressed and not record_was_pressed:
                 logger.info("SpeechMike RECORD pressed")
                 self.on_toggle()
 

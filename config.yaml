@@ -1,15 +1,40 @@
-model_name: distil-whisper-large-v3
-quantization_type: bfloat16
+model_name: large-v3
+quantization_type: float32
 device_type: cuda
 task_mode: transcribe
-show_clipboard_window: false
+show_clipboard_window: true
 supported_quantizations:
   cpu:
   - float32
   cuda:
+  - float32
   - float16
   - bfloat16
-  - float32
 curate_transcription: true
 clipboard_append_mode: false
-append_mode: false
+without_timestamps: true
+include_timestamps: false
+word_timestamps: false
+beam_size: 5
+vad_filter: true
+condition_on_previous_text: false
+output_format: txt
+single_file_output_mode: clipboard
+output_directory: ''
+batch_recursive: false
+batch_extensions:
+- .aac
+- .amr
+- .asf
+- .avi
+- .flac
+- .m4a
+- .mkv
+- .mp3
+- .mp4
+- .ogg
+- .wav
+- .webm
+- .wma
+server_mode_enabled: false
+server_port: 8765
