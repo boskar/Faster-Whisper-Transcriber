@@ -65,6 +65,7 @@ def _resample(audio: np.ndarray, orig_sr: int, target_sr: int = SR) -> np.ndarra
 
 
 def _to_mono_float32(audio: np.ndarray) -> np.ndarray:
+    orig_dtype = audio.dtype
     if audio.ndim > 1:
         if audio.shape[0] <= audio.shape[-1]:
             audio = audio.mean(axis=0)
@@ -73,12 +74,22 @@ def _to_mono_float32(audio: np.ndarray) -> np.ndarray:
     audio = audio.flatten().astype(np.float32)
     if audio.size == 0:
         return audio
-    if audio.max() > 1.0 or audio.min() < -1.0:
-        max_val = max(abs(audio.max()), abs(audio.min()))
+
+    if np.issubdtype(orig_dtype, np.integer):
+        info = np.iinfo(orig_dtype)
+        audio = audio / float(max(abs(int(info.min)), int(info.max)))
+    elif audio.max() > 1.0 or audio.min() < -1.0:
+        max_val = max(abs(float(audio.max())), abs(float(audio.min())))
         if max_val > 0:
-            if np.issubdtype(audio.dtype, np.integer) or max_val > 10:
-                audio = audio / 32768.0
+            audio = audio / 32768.0
     return audio
+
+
+def _safe_unlink(path) -> None:
+    try:
+        os.remove(path)
+    except OSError:
+        pass
 
 
 def _write_wav(audio: np.ndarray, sr: int) -> Path:
@@ -175,6 +186,9 @@ def _normalize_to_wav(
 def _do_transcription(item: WorkItem) -> Dict[str, Any]:
     start_time = time.perf_counter()
 
+    if _state.cancel_event.is_set():
+        raise RuntimeError("Server shutting down")
+
     model_info = item.model_info
     model_name = model_info["name"]
     quantization = model_info["quantization_type"]
@@ -232,6 +246,8 @@ def _do_transcription(item: WorkItem) -> Dict[str, Any]:
     text_parts: list[str] = []
     segments_out: list[dict] = []
     for seg in segments_iter:
+        if _state.cancel_event.is_set():
+            raise RuntimeError("Transcription cancelled (server shutting down)")
         text_parts.append(seg.text.lstrip())
         if item.settings.include_timestamps:
             segments_out.append(
@@ -488,19 +504,21 @@ def create_app() -> FastAPI:
                 include_timestamps, word_timestamps, beam_size, vad_filter,
                 condition_on_previous_text, batch_size,
             )
+            loop = asyncio.get_event_loop()
+            future = loop.create_future()
+            item = WorkItem(
+                audio_path=audio_path,
+                settings=settings,
+                model_info=model_info,
+                future=future,
+            )
+            await _state.queue.put(item)
         except ValueError as e:
+            _safe_unlink(audio_path)
             raise HTTPException(status_code=400, detail=str(e))
-
-        loop = asyncio.get_event_loop()
-        future = loop.create_future()
-
-        item = WorkItem(
-            audio_path=audio_path,
-            settings=settings,
-            model_info=model_info,
-            future=future,
-        )
-        await _state.queue.put(item)
+        except Exception:
+            _safe_unlink(audio_path)
+            raise
 
         try:
             result = await future
@@ -541,19 +559,21 @@ def create_app() -> FastAPI:
                 request.beam_size, request.vad_filter,
                 request.condition_on_previous_text, request.batch_size,
             )
+            loop = asyncio.get_event_loop()
+            future = loop.create_future()
+            item = WorkItem(
+                audio_path=audio_path,
+                settings=settings,
+                model_info=model_info,
+                future=future,
+            )
+            await _state.queue.put(item)
         except ValueError as e:
+            _safe_unlink(audio_path)
             raise HTTPException(status_code=400, detail=str(e))
-
-        loop = asyncio.get_event_loop()
-        future = loop.create_future()
-
-        item = WorkItem(
-            audio_path=audio_path,
-            settings=settings,
-            model_info=model_info,
-            future=future,
-        )
-        await _state.queue.put(item)
+        except Exception:
+            _safe_unlink(audio_path)
+            raise
 
         try:
             result = await future

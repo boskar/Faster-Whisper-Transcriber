@@ -862,6 +862,13 @@ class MainWindow(QMainWindow):
     def _on_settings_update_requested(
         self, model: str, quant: str, device: str
     ) -> None:
+        if self.is_recording or self._is_busy():
+            QMessageBox.information(
+                self, "Busy",
+                "Finish the current recording or transcription "
+                "before changing the model.",
+            )
+            return
         self.controller.update_model(model, quant, device)
 
     def _resolve_audio_device(self) -> int | None:
@@ -1005,6 +1012,8 @@ class MainWindow(QMainWindow):
             self.server_manager.stop_server()
 
     def _start_server_mode(self, port: int) -> None:
+        if self.server_manager.is_running():
+            self.server_manager.stop_server()
         model_name = self.loaded_model_settings.get("model_name", self.DEFAULTS["model"])
         quantization = self.loaded_model_settings.get(
             "quantization_type", self.DEFAULTS["quantization"]
@@ -1088,6 +1097,10 @@ class MainWindow(QMainWindow):
             self._sync_record_led_transcribing()
         else:
             if self.controller.start_recording():
+                self._pending_output_mode = "clipboard"
+                self._pending_output_format = "txt"
+                self._pending_output_dir = ""
+                self._pending_source_file = ""
                 self.is_recording = True
                 self.record_button.setText("Recording...")
                 self.record_button.set_state(WaveformButton.RECORDING)
@@ -1121,6 +1134,26 @@ class MainWindow(QMainWindow):
             return False
 
     # --- File panel transcription ---
+
+    def _reject_new_transcription(self) -> bool:
+        if self._server_mode_enabled:
+            QMessageBox.information(
+                self, "Server Mode",
+                "File transcription is unavailable while server mode is on.",
+            )
+            return True
+        if (
+            self.is_recording
+            or self.controller.is_transcribing()
+            or self.controller.is_batch_processing()
+        ):
+            QMessageBox.information(
+                self, "Busy",
+                "A recording or transcription is already in progress. "
+                "Please finish it first.",
+            )
+            return True
+        return False
 
     @Slot(str, int, str, str, str)
     def _on_file_panel_transcribe(self, file_path: str, batch_size: int,
@@ -1229,6 +1262,9 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(
                 self, "Unsupported File", "Please select a supported audio file."
             )
+            return
+
+        if self._reject_new_transcription():
             return
 
         self._pending_output_mode = "clipboard"
