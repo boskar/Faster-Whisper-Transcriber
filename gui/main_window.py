@@ -247,6 +247,7 @@ class MainWindow(QMainWindow):
             lambda: self.hotkey_toggle_recording.emit(),
             lambda: self.hotkey_toggle_append_mode.emit(),
             lambda: self.hotkey_toggle_paste_mode.emit(),
+            lambda: self.global_hotkey.eol_textedit(),
         )
         self.global_hotkey.start()
         self._sync_append_led()

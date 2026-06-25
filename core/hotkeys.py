@@ -24,6 +24,7 @@ SET_LED_COMMAND = 0x02
 RECORD_BUTTON_MASK = 1 << 8
 INS_OVR_BUTTON_MASK = 1 << 14
 F1_BUTTON_MASK = 1 << 1
+EOL_PRIO_BUTTON_MASK = 1 << 13
 LED_MODE_OFF = 0
 LED_MODE_BLINK_FAST = 2
 LED_MODE_ON = 3
@@ -202,10 +203,12 @@ class GlobalHotkey:
         on_toggle,
         on_append_toggle=None,
         on_paste_mode_toggle=None,
+        on_eol_prio=None,
     ):
         self.on_toggle = on_toggle
         self.on_append_toggle = on_append_toggle
         self.on_paste_mode_toggle = on_paste_mode_toggle
+        self.on_eol_prio = on_eol_prio
 
         self.listener = None
 
@@ -228,7 +231,7 @@ class GlobalHotkey:
 
             logger.info(
                 "Global hotkey listener started "
-                "(F9 + SpeechMike Record + SpeechMike Ins/Ovr + SpeechMike F1)"
+                "(F9 + SpeechMike Record + SpeechMike Ins/Ovr + SpeechMike F1 + SpeechMike EOL/PRIO)"
             )
 
         except Exception as e:
@@ -275,6 +278,8 @@ class GlobalHotkey:
             ins_ovr_is_pressed = bool(mask & INS_OVR_BUTTON_MASK)
             f1_was_pressed = bool(last_mask & F1_BUTTON_MASK)
             f1_is_pressed = bool(mask & F1_BUTTON_MASK)
+            eol_prio_was_pressed = bool(last_mask & EOL_PRIO_BUTTON_MASK)
+            eol_prio_is_pressed = bool(mask & EOL_PRIO_BUTTON_MASK)
 
             last_mask = mask
 
@@ -297,6 +302,14 @@ class GlobalHotkey:
             ):
                 logger.info("SpeechMike F1 pressed")
                 self.on_paste_mode_toggle()
+
+            if (
+                eol_prio_is_pressed
+                and not eol_prio_was_pressed
+                and self.on_eol_prio is not None
+            ):
+                logger.info("SpeechMike EOL/PRIO pressed")
+                self.on_eol_prio()
 
             time.sleep(0.005)
 
@@ -371,3 +384,25 @@ class GlobalHotkey:
             )
         except Exception as e:
             logger.warning(f"Failed to send paste hotkey: {e}")
+
+
+    def eol_textedit(self) -> None:
+        try:
+            modifier = keyboard.Key.cmd if sys.platform == "darwin" else keyboard.Key.ctrl
+            self.keyboard_controller.press(modifier)
+            self.keyboard_controller.press("s")
+            self.keyboard_controller.release("s")
+            self.keyboard_controller.release(modifier)
+            time.sleep(0.01)
+
+            self.keyboard_controller.press(modifier)
+            self.keyboard_controller.press("v")
+            self.keyboard_controller.release("v")
+            self.keyboard_controller.release(modifier)
+            logger.info(
+                "Triggered %s+S then %s+V into active window",
+                "Command" if sys.platform == "darwin" else "Ctrl",
+                "Command" if sys.platform == "darwin" else "Ctrl",
+            )
+        except Exception as e:
+            logger.warning(f"Failed to send EOL/PRIO hotkey sequence: {e}")
