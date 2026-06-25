@@ -396,11 +396,11 @@ class GlobalHotkey:
             time.sleep(0.01)
 
             self.keyboard_controller.press(modifier)
-            self.keyboard_controller.press("v")
-            self.keyboard_controller.release("v")
+            self.keyboard_controller.press("q")
+            self.keyboard_controller.release("q")
             self.keyboard_controller.release(modifier)
             logger.info(
-                "Triggered %s+S then %s+V into active window",
+                "Triggered %s+S then %s+Q into active window",
                 "Command" if sys.platform == "darwin" else "Ctrl",
                 "Command" if sys.platform == "darwin" else "Ctrl",
             )
